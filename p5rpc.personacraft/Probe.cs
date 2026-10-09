@@ -34,6 +34,8 @@ internal sealed class Probe
     private bool _f8WasDown;
     private string _lastField = "";
     private bool _reportedError;
+    private bool _wasReady;
+    private int _samples;
 
     public Probe(IP5RLib lib, ILogger logger, string csvPath)
     {
@@ -44,7 +46,11 @@ internal sealed class Probe
         _thread = new Thread(Run) { IsBackground = true, Name = "PersonaCraft probe", Priority = ThreadPriority.BelowNormal };
     }
 
-    public void Start() => _thread.Start();
+    public void Start()
+    {
+        _sequencer.SequenceChanged += info => Log($"sequence {info.LastSequence} -> {info.CurrentSequence}");
+        _thread.Start();
+    }
 
     public void Stop() => _running = false;
 
@@ -65,13 +71,28 @@ internal sealed class Probe
                 if (!_enabled || Environment.TickCount64 < nextSample)
                     continue;
                 nextSample = Environment.TickCount64 + SampleIntervalMs;
-                if (!_flow.Ready() || !InField())
+                if (!_flow.Ready())
+                    continue;
+                if (!_wasReady)
+                {
+                    _wasReady = true;
+                    Log($"game functions ready, current sequence {_sequencer.GetSequenceInfo().CurrentSequence}");
+                }
+                if (!InField())
                     continue;
 
                 try
                 {
-                    if (Sample() is { } line)
+                    if (_samples == 0)
+                        Log("in the field, taking the first sample");
+                    var watch = Stopwatch.StartNew();
+                    string? line = Sample();
+                    if (line != null)
+                    {
                         csv.WriteLine(line);
+                        if (++_samples == 1 || _samples % 30 == 0)
+                            Log($"sample {_samples} ({watch.ElapsedMilliseconds} ms): {line}");
+                    }
                 }
                 catch (Exception e) when (!_reportedError)
                 {
