@@ -9,6 +9,38 @@ con él por memoria compartida.
 
 Experimental, solo un jugador. Nunca escribe partidas.
 
+> Fan project. No está afiliado a Atlus, SEGA, Mojang ni Microsoft; necesitas tener los dos juegos.
+> No incluye ningún archivo de ninguno de los dos.
+
+## Instalar y jugar
+
+Necesitas:
+
+- Persona 5 Royal en Steam y [Reloaded-II](https://github.com/Reloaded-Project/Reloaded-II) con el juego añadido.
+- Los mods de Reloaded `p5rpc.lib`, `p5rpc.inputhook`, `reloaded.sharedlib.hooks` y
+  `Reloaded.Memory.SigScan.ReloadedII`.
+- Minecraft Java 26.3 con Fabric Loader 0.19.5+, Fabric API 0.161.0+26.3, Java 25, el argumento JVM
+  `--enable-native-access=ALL-UNNAMED` y el mod de SkyCraft (`skycraft-<versión>.jar`, compilado desde
+  [PeakCraft](https://github.com/aeironnsarmiento/PeakCraft) o SkyCraft).
+
+Compilar (necesita el .NET SDK 9 o posterior): `dotnet build p5rpc.personacraft -c Release`. El mod
+se compila directamente en `%USERPROFILE%\Reloaded-II\Mods\p5rpc.personacraft` (cámbialo con
+`-p:ReloadedModsDir=...`).
+
+Para jugar: abre Minecraft y déjalo en la pantalla de título; luego abre P5R desde Reloaded-II con
+PersonaCraft activado y carga una partida.
+
+| Tecla | Hace |
+|---|---|
+| G | Interactuar en P5R (hablar, puertas, objetos) |
+| V | Devolver todo el control a P5R / recuperarlo |
+| Tab | Menú de P5R |
+| O | Menú de Minecraft |
+| F5 | Tercera persona: se ve tu personaje de Minecraft |
+| el resto | Minecraft |
+
+Las teclas y opciones están en `personacraft.json`, junto al mod.
+
 ## Cómo funciona
 
 | Pieza | Dónde | Cómo |

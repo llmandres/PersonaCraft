@@ -1,7 +1,7 @@
 {
   "ModId": "p5rpc.personacraft",
   "ModName": "PersonaCraft",
-  "ModAuthor": "yolmi",
+  "ModAuthor": "llmandres",
   "ModVersion": "0.1.0",
   "ModDescription": "Play Persona 5 Royal as a Minecraft player: Minecraft movement, HUD and inventory on P5R's fields, linked to SkyCraft's Minecraft mod. Never writes saves.",
   "ModDll": "p5rpc.personacraft.dll",
