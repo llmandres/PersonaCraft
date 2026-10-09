@@ -48,7 +48,7 @@ internal sealed class Probe
 
     public void Start()
     {
-        _sequencer.SequenceChanged += info => Log($"sequence {info.LastSequence} -> {info.CurrentSequence}");
+        _sequencer.SequenceChanged += info => Log($"sequence {Real(info.LastSequence)} -> {Real(info.CurrentSequence)}");
         _thread.Start();
     }
 
@@ -76,7 +76,7 @@ internal sealed class Probe
                 if (!_wasReady)
                 {
                     _wasReady = true;
-                    Log($"game functions ready, current sequence {_sequencer.GetSequenceInfo().CurrentSequence}");
+                    Log($"game functions ready, current sequence {Real(_sequencer.GetSequenceInfo().CurrentSequence)}");
                 }
                 if (!InField())
                     continue;
@@ -143,7 +143,15 @@ internal sealed class Probe
             cx.ToString("F2", ci), cy.ToString("F2", ci), cz.ToString("F2", ci));
     }
 
-    private bool InField() => _sequencer.GetSequenceInfo().CurrentSequence == SequenceType.FIELD;
+    private bool InField() => Real(_sequencer.GetSequenceInfo().CurrentSequence) == SequenceType.FIELD;
+
+    /// <summary>
+    /// p5rpc.lib 1.1.0's sequence numbers are one higher than this game version's: it reports booting
+    /// (INIT_READ) as CALENDAR and loading a save (TITLE -> FIELD) as TITLE_RAPID -> BATTLE. Measured
+    /// on the Steam build of 2026-10-09; the game evidently gained a sequence before INIT_READ.
+    /// </summary>
+    private static SequenceType Real(SequenceType reported) =>
+        reported <= SequenceType.TITLE ? reported : (SequenceType)((int)reported - 1);
 
     /// <summary>F8 flips sampling on and off, only while P5R is the focused window.</summary>
     private void PollToggleKey()
