@@ -22,6 +22,7 @@ internal sealed unsafe class Plugin
 {
     private const int TickMs = 8;
     private const float MaxGroundGapCm = 40f;
+    private const double PausedMs = 250; // as Ownership.StaleUpdateMs
 
     private readonly Settings _settings;
     private readonly ISequencer _sequencer;
@@ -156,6 +157,14 @@ internal sealed unsafe class Plugin
         bool inField = sequence == SequenceType.FIELD;
         var snap = _player.Snapshot;
         double ageMs = (HostLink.Qpc() - snap.Qpc) * 1000.0 / _link.QpcFrequency;
+
+        // The field player stopped updating (door, loading, menu, battle) while Minecraft had Joker:
+        // give P5R its camera back now, not when the update resumes.
+        if (snap.Following && ageMs > PausedMs)
+        {
+            _player.ReleaseWhilePaused();
+            snap = _player.Snapshot;
+        }
 
         UpdateCollision(inField, snap);
         _collision.Pump();

@@ -85,6 +85,8 @@ internal sealed unsafe class FieldPlayer
     private bool _hasCamera;
 
     private bool _following;
+    private readonly object _followGate = new();
+    private Task? _release; // a release queued from the logic thread; no new takeover until it ran
     private nint _work;
     private readonly List<int> _copies = new();
     private bool _jokerHidden;
@@ -176,24 +178,63 @@ internal sealed unsafe class FieldPlayer
 
         var command = _command;
         bool follow = command.Follow && hasJoker && _settings.TakeOver && !_flowSlow && _getTranslate != null;
-        if (follow && !_following)
-            BeginFollow(work, joker);
-        else if (!follow && _following)
-            EndFollow();
-        if (!_following)
-            View = null;
+        bool following;
+        lock (_followGate)
+        {
+            if (follow && !_following && (_release?.IsCompleted ?? true))
+                BeginFollow(work, joker);
+            else if (!follow && _following)
+                EndFollow();
+            if (!_following)
+                View = null;
 
-        if (_following)
-        {
-            joker = Apply(command, work);
+            if (_following)
+                joker = Apply(command, work);
+            following = _following;
         }
-        else if (_frame % 6 == 0)
-        {
+        if (!following && _frame % 6 == 0)
             ReadCamera(joker);
-        }
 
         _snapshot = new FieldSnapshot(HostLink.Qpc(), _field, _pcHandle, state, hasJoker, joker,
-            _hasCamera, _cameraPos, _cameraYaw, _cameraPitch, _following);
+            _hasCamera, _cameraPos, _cameraYaw, _cameraPitch, following);
+    }
+
+    /// <summary>
+    /// Called from the logic thread when the field player stopped updating while Minecraft had Joker
+    /// (a door, a loading screen, a menu, a battle). The release that normally runs inside the update
+    /// is done here instead: P5R's transitions can wait on the camera, so it must not stay locked.
+    /// The flowscript calls are queued to the game's main loop by p5rpc.lib, off this thread, with no
+    /// lock held while they wait.
+    /// </summary>
+    public void ReleaseWhilePaused()
+    {
+        int handle;
+        bool hidden;
+        lock (_followGate)
+        {
+            if (!_following)
+                return;
+            _following = false;
+            hidden = _jokerHidden;
+            _jokerHidden = false;
+            handle = _pcHandle;
+            View = null;
+        }
+        _snapshot = _snapshot with { Following = false };
+        _release = Task.Run(() =>
+        {
+            try
+            {
+                _flow.FLD_CAMERA_UNLOCK();
+                if (hidden && handle >= 0)
+                    _flow.FLD_MODEL_SET_VISIBLE(handle, 1, 0);
+                Log.Info("field player: field player paused; released the camera and Joker to P5R");
+            }
+            catch (Exception e)
+            {
+                Log.Error($"field player: releasing while paused failed: {e.Message}");
+            }
+        });
     }
 
     /// <summary>
