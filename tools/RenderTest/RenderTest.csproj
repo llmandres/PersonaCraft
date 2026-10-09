@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Drives Minecraft through the link (place blocks), then draws its blocks and HUD with the mod's
+       own renderer into an image, without P5R. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\p5rpc.personacraft\Log.cs" />
+    <Compile Include="..\..\p5rpc.personacraft\Link\*.cs" />
+    <Compile Include="..\..\p5rpc.personacraft\World\Coords.cs" />
+    <Compile Include="..\..\p5rpc.personacraft\World\CollisionExporter.cs" />
+    <Compile Include="..\..\p5rpc.personacraft\Game\CameraView.cs" />
+    <Compile Include="..\..\p5rpc.personacraft\Render\Blocks.cs" />
+    <ProjectReference Include="..\..\PersonaCraft.Core\PersonaCraft.Core.csproj" />
+    <PackageReference Include="Reloaded.Mod.Interfaces" Version="2.4.0" />
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.1" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="3.8.1" />
+    <PackageReference Include="System.IO.Hashing" Version="9.0.0" />
+  </ItemGroup>
+</Project>

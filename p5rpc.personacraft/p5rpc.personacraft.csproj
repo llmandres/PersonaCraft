@@ -7,6 +7,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Deterministic>true</Deterministic>
     <!-- Builds straight into Reloaded-II's Mods folder. Override with -p:ReloadedModsDir=... -->
     <ReloadedModsDir Condition="'$(ReloadedModsDir)' == ''">$(USERPROFILE)\Reloaded-II\Mods</ReloadedModsDir>
@@ -18,8 +19,20 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Interfaces of mods Reloaded loads separately: compile against them, ship nothing. -->
     <PackageReference Include="Reloaded.Mod.Interfaces" Version="2.4.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Reloaded.SharedLib.Hooks" Version="1.9.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Reloaded.Memory.SigScan.ReloadedII.Interfaces" Version="1.2.0" ExcludeAssets="runtime" />
     <PackageReference Include="p5rpc.lib.interfaces" Version="1.1.0" />
+    <PackageReference Include="p5rpc.inputhook.interfaces" Version="1.0.0" />
+    <!-- Shipped with the mod. -->
+    <PackageReference Include="CriFsV2Lib" Version="2.1.2" />
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.1" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="3.8.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PersonaCraft.Core\PersonaCraft.Core.csproj" />
   </ItemGroup>
 
 </Project>

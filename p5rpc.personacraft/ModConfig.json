@@ -1,9 +1,9 @@
 {
   "ModId": "p5rpc.personacraft",
-  "ModName": "PersonaCraft (probe)",
+  "ModName": "PersonaCraft",
   "ModAuthor": "yolmi",
-  "ModVersion": "0.0.1",
-  "ModDescription": "Read-only probe: logs Joker's and the camera's position in the field to positions.csv once a second. F8 toggles it. Writes nothing to the game or to saves.",
+  "ModVersion": "0.1.0",
+  "ModDescription": "Play Persona 5 Royal as a Minecraft player: Minecraft movement, HUD and inventory on P5R's fields, linked to SkyCraft's Minecraft mod. Never writes saves.",
   "ModDll": "p5rpc.personacraft.dll",
   "ModIcon": "",
   "ModR2RManagedDll32": "",
@@ -17,8 +17,15 @@
   "ReleaseMetadataFileName": "",
   "PluginData": {},
   "IsUniversalMod": false,
-  "ModDependencies": [ "p5rpc.lib" ],
+  "ModDependencies": [
+    "p5rpc.lib",
+    "p5rpc.inputhook",
+    "reloaded.sharedlib.hooks",
+    "Reloaded.Memory.SigScan.ReloadedII"
+  ],
   "OptionalDependencies": [],
-  "SupportedAppId": [ "p5r.exe" ],
+  "SupportedAppId": [
+    "p5r.exe"
+  ],
   "ProjectUrl": ""
 }
