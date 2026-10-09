@@ -23,8 +23,14 @@ internal sealed class Settings
     /// <summary>Key (Windows virtual-key code) that presses P5R's confirm/interact. Default G.</summary>
     public int InteractKey { get; set; } = 0x47;
 
-    /// <summary>P5R key (p5rpc.inputhook Key value) the interact key sends. Default E, P5R's keyboard confirm.</summary>
-    public int P5RConfirmKey { get; set; } = 0x20000 + 8;
+    /// <summary>
+    /// P5R keys (p5rpc.inputhook Key values: 0x20000 + HID usage) the interact key presses, all at
+    /// once. Default E (P5R's keyboard confirm per its default bindings) and Enter.
+    /// </summary>
+    public int[] P5RConfirmKeys { get; set; } = [0x20000 + 8, 0x20000 + 40];
+
+    /// <summary>Key that hands Joker, the camera and the keyboard back to P5R, and takes them again. Default V.</summary>
+    public int HandBackKey { get; set; } = 0x56;
 
     /// <summary>Key that opens Minecraft's pause menu. Default O.</summary>
     public int MinecraftMenuKey { get; set; } = 0x4F;

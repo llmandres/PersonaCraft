@@ -90,9 +90,12 @@ internal sealed class InputBridge
         });
         if (_interactDown)
         {
-            var confirm = (Key)_settings.P5RConfirmKey;
-            if (!keys.Contains(confirm))
-                keys.Add(confirm);
+            foreach (int code in _settings.P5RConfirmKeys)
+            {
+                var confirm = (Key)code;
+                if (!keys.Contains(confirm))
+                    keys.Add(confirm);
+            }
         }
     }
 
@@ -213,6 +216,8 @@ internal sealed class InputBridge
                     interact = down;
                     continue;
                 }
+                if (vk == _settings.HandBackKey)
+                    continue; // the plugin's
                 if (vk == _settings.MinecraftMenuKey)
                 {
                     if (down && !_held[vk])

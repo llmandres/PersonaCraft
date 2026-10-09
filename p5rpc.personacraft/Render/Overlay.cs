@@ -86,7 +86,24 @@ float4 ps(V i) : SV_Target { return tex.Sample(smp, i.uv); }";
     public volatile bool DrainsRender;
 
     /// <summary>Drop every block section (link loss, new Minecraft).</summary>
-    public void ClearBlocks() => _clearBlocks = true;
+    public void ClearBlocks()
+    {
+        _clearBlocks = true;
+        lock (RenderRingLock)
+            _cache.Clear();
+    }
+
+    private readonly RenderCache _cache = new();
+
+    /// <summary>The logic thread's drain until this overlay draws: keeps what will be needed.</summary>
+    public void DrainIntoCache()
+    {
+        lock (RenderRingLock)
+        {
+            if (!DrainsRender)
+                _link.DrainRender(8L << 20, _cache.Add);
+        }
+    }
 
     public int BlockSections => _blocks?.Count ?? 0;
 
@@ -288,7 +305,11 @@ float4 ps(V i) : SV_Target { return tex.Sample(smp, i.uv); }";
         _depth = _device.CreateDepthStencilState(DepthStencilDescription.None);
         _cursorView = MakeCursor();
         _blocks = new Blocks(_device);
-        DrainsRender = true;
+        lock (RenderRingLock)
+        {
+            _cache.Replay(HandleRender);
+            DrainsRender = true;
+        }
         Log.Info($"overlay: attached to P5R's swap chain 0x{swapChainPtr:X} (feature level {_device.FeatureLevel})");
     }
 

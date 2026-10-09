@@ -43,6 +43,11 @@ internal sealed unsafe class Plugin
     private Owner _lastOwner = Owner.P5ROwns;
     private long _nextSummary;
     private long _nextEsc;
+    private bool _handedBack;
+    private bool _toggleWasDown;
+
+    [System.Runtime.InteropServices.DllImport("user32")] private static extern short GetAsyncKeyState(int vk);
+    [System.Runtime.InteropServices.DllImport("user32")] private static extern nint GetForegroundWindow();
     private uint _hostSeqFrames;
     private SequenceType _lastSequence = SequenceType.NONE;
 
@@ -133,10 +138,7 @@ internal sealed unsafe class Plugin
         // Drained every frame from the first one: a full render ring stalls Minecraft's heartbeat.
         // The overlay drains it on the render thread (and draws the blocks); until it runs, drop them here.
         if (!_overlay.DrainsRender)
-        {
-            lock (_overlay.RenderRingLock)
-                _link.DrainRender(8L << 20, static (_, _, _) => { });
-        }
+            _overlay.DrainIntoCache();
         // A screen left open before Minecraft's world loads (its first-run onboarding) keeps it on the
         // title screen with its window hidden: close it.
         if (alive && (_guest.flags & (uint)Proto.GuestFlags.InWorld) == 0 && (_guest.flags & (uint)Proto.GuestFlags.ScreenOpen) != 0
@@ -171,7 +173,8 @@ internal sealed unsafe class Plugin
         _collision.Pump();
         bool collisionReady = _collision.Complete && _collision.Field == snap.Field;
 
-        _ownership.Update(alive, _settings.TakeOver && _player.Ready, inField, collisionReady, snap, ageMs, _guest);
+        PollToggleKey();
+        _ownership.Update(alive, _settings.TakeOver && _player.Ready && !_handedBack, inField, collisionReady, snap, ageMs, _guest);
         var owner = _ownership.State;
         if (owner == Owner.Handoff && _lastOwner != Owner.Handoff)
             _input.SetLook(snap.CameraYaw, snap.CameraPitch); // keep looking where P5R's camera did
@@ -186,6 +189,22 @@ internal sealed unsafe class Plugin
 
         PublishHostState(alive, inField, snap, owner);
         Summary(snap, sequence, ageMs);
+    }
+
+    /// <summary>
+    /// The hand-back key (V): gives Joker, the camera and the keyboard to P5R until pressed again,
+    /// for anything the mod does not cover. Read here because it must work in either direction.
+    /// </summary>
+    private void PollToggleKey()
+    {
+        bool focused = WindowHook.Window != 0 && GetForegroundWindow() == WindowHook.Window;
+        bool down = focused && (GetAsyncKeyState(_settings.HandBackKey) & 0x8000) != 0;
+        if (down && !_toggleWasDown && _guestAlive)
+        {
+            _handedBack = !_handedBack;
+            Log.Info(_handedBack ? "hand-back key: P5R has Joker until it is pressed again" : "hand-back key: Minecraft takes Joker again");
+        }
+        _toggleWasDown = down;
     }
 
     /// <summary>Loads and sends the current field's collision, once its alignment with Joker checks out.</summary>
