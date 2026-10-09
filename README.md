@@ -9,6 +9,11 @@ con él por memoria compartida.
 
 Experimental, solo un jugador. Nunca escribe partidas.
 
+> **En pruebas (0.1.0).** Verificado sin el juego: colisión exacta, enlace con Minecraft, bloques,
+> HUD y modelo del jugador. En el juego funcionan el control de Joker por Minecraft, la cámara y el
+> cambio de sala; la tecla de interactuar (G) y el modelo en tercera persona están arreglados pero aún
+> sin probar en partida. Haz copia de tus partidas antes de probarlo y no guardes durante las pruebas.
+
 > Fan project. No está afiliado a Atlus, SEGA, Mojang ni Microsoft; necesitas tener los dos juegos.
 > No incluye ningún archivo de ninguno de los dos.
 
