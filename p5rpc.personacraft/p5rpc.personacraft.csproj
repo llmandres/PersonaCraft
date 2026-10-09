@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <!-- Builds straight into Reloaded-II's Mods folder. Override with -p:ReloadedModsDir=... -->
+    <ReloadedModsDir Condition="'$(ReloadedModsDir)' == ''">$(USERPROFILE)\Reloaded-II\Mods</ReloadedModsDir>
+    <OutputPath>$(ReloadedModsDir)\p5rpc.personacraft</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="ModConfig.json" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Reloaded.Mod.Interfaces" Version="2.4.0" ExcludeAssets="runtime" />
+    <PackageReference Include="p5rpc.lib.interfaces" Version="1.1.0" />
+  </ItemGroup>
+
+</Project>
