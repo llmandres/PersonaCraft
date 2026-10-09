@@ -63,6 +63,7 @@ internal sealed unsafe class Plugin
 
         _player.Hook(scanner, hooks);
         _input.HookP5R(inputHook);
+        WindowHook.HookCursor(hooks);
         if (settings.Overlay)
             _overlay.Install(hooks);
     }
@@ -177,7 +178,7 @@ internal sealed unsafe class Plugin
         _lastOwner = owner;
 
         _input.Update(_ownership, _guest, _overlay.Width, _overlay.Height);
-        _player.SetCommand(new FollowCommand(_ownership.BodyFollows, _guest, _input.Yaw, _input.Pitch, _settings.HideJokerInFirstPerson));
+        _player.SetCommand(new FollowCommand(_ownership.BodyFollows, _guest, _input.Yaw, _input.Pitch, _settings.HideJoker));
 
         _overlay.Visible = _settings.Overlay && alive && _ownership.Overlay;
         _overlay.ShowCursor = _input.ScreenOpen;

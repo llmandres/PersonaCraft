@@ -409,7 +409,8 @@ internal sealed unsafe class FieldPlayer
             _lastJokerYaw = jokerYaw;
         }
 
-        bool hide = command.HideJoker && guest.cameraMode == 0;
+        // Joker is hidden in every camera mode: in F5 Minecraft's own player model is drawn instead.
+        bool hide = command.HideJoker;
         if (hide != _jokerHidden)
         {
             _flow.FLD_MODEL_SET_VISIBLE(_pcHandle, hide ? 0 : 1, 0);
@@ -440,7 +441,8 @@ internal sealed unsafe class FieldPlayer
         if (_frame % 30 == 0)
             _fovY = _flow.FLD_CAMERA_GET_FOVY();
         var (cx, cy, cz) = _field.ToMc(position);
-        View = new CameraView(cx, cy, cz, yaw, pitch, _fovY is > 1f and < 170f ? _fovY : 45f);
+        View = new CameraView(cx, cy, cz, yaw, pitch, _fovY is > 1f and < 170f ? _fovY : 45f,
+            feetMc.X, feetMc.Y, feetMc.Z, guest.cameraMode);
         return feet;
     }
 

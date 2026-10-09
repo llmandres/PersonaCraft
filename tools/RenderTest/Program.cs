@@ -20,6 +20,7 @@ var field = new FieldFrame(int.Parse(args[1]), int.Parse(args[2]));
 var joker = new Vector3(float.Parse(args[3], ci), float.Parse(args[4], ci), float.Parse(args[5], ci));
 string output = args[6];
 const int W = 1280, H = 720;
+int avatarMessages = 0;
 
 D3D11.D3D11CreateDevice(null, DriverType.Hardware, DeviceCreationFlags.None, [FeatureLevel.Level_11_0], out ID3D11Device? baseDevice, out ID3D11DeviceContext? context).CheckError();
 var device = baseDevice!.QueryInterface<ID3D11Device1>();
@@ -99,8 +100,14 @@ while (Environment.TickCount64 - start < 120000)
             pitch = 50f - step * 5f;
             step++;
         }
-        if (step == 7 && t > 9000) { pitch = 20f; step++; }
-        if (step == 8 && t > 11000)
+        if (step == 7 && t > 9000)
+        {
+            pitch = 20f;
+            step++;
+            link.PushInput(Proto.InputType.Key, 62, 1); // F5: third person behind the player
+            link.PushInput(Proto.InputType.Key, 62, 0);
+        }
+        if (step == 8 && t > 12000)
             break;
     }
     Thread.Sleep(16);
@@ -111,9 +118,14 @@ Console.WriteLine($"guest eye {gs.eyeX:F2},{gs.eyeY:F2},{gs.eyeZ:F2} yaw {gs.yaw
 
 // Like the mod over P5R's picture: background, then blocks, then the HUD. A second image from 5
 // blocks behind and 2 above, looking down, shows the shape of what was built.
-Render(new CameraView(gs.eyeX, gs.eyeY, gs.eyeZ, gs.yaw, gs.pitch, 70f), output, true);
+// The mod's camera in F5 (mode 1): behind the eye by Minecraft's camera distance.
+var look = Look.Forward(gs.yaw, gs.pitch);
+double distance = gs.cameraMode == 1 ? gs.cameraDistance : 0;
+Console.WriteLine($"camera mode {gs.cameraMode}, distance {gs.cameraDistance:F2}");
+Render(new CameraView(gs.eyeX - look.X * distance, gs.eyeY - look.Y * distance, gs.eyeZ - look.Z * distance, gs.yaw, gs.pitch, 70f,
+    gs.x, gs.y, gs.z, gs.cameraMode), output, true);
 var back = Look.Forward(gs.yaw, 35f);
-Render(new CameraView(gs.eyeX - back.X * 5, gs.eyeY + 2.5, gs.eyeZ - back.Z * 5, gs.yaw, 35f, 70f), output.Replace(".png", "_back.png"), false);
+Render(new CameraView(gs.eyeX - back.X * 5, gs.eyeY + 2.5, gs.eyeZ - back.Z * 5, gs.yaw, 35f, 70f, gs.x, gs.y, gs.z, 1), output.Replace(".png", "_back.png"), false);
 Console.WriteLine($"wrote {output}");
 
 void Render(CameraView camera, string path, bool hud)
@@ -146,7 +158,12 @@ void Drain()
 {
     unsafe
     {
-        link.DrainRender(16L << 20, (t, p, n) => blocks.Handle(context!, t, p, n));
+        link.DrainRender(16L << 20, (t, p, n) =>
+        {
+            if (t == Proto.RenAvatar)
+                AnalyseAvatar(p, n);
+            blocks.Handle(context!, t, p, n);
+        });
         if (link.AcquireOverlayFrame())
         {
             var hdr = link.FrontHeader;
@@ -158,6 +175,52 @@ void Drain()
                 overlayOk = true;
             }
         }
+    }
+}
+
+// Where does the skin's face (head front: u 8-16, v 8-16 of a 64x64 skin) sit relative to the head?
+// Prints the face quads' mean position next to the whole head's, for the skin batch (texture 1).
+unsafe void AnalyseAvatar(byte* payload, uint bytes)
+{
+    if (bytes < 8) return;
+    var hdr = *(Proto.RenAvatarHdr*)payload;
+    var batches = (Proto.RenBatch*)(payload + 8);
+    var v = (Proto.RenVertex*)(batches + hdr.batchCount);
+    if (++avatarMessages % 60 == 1)
+    {
+        for (int b = 0; b < hdr.batchCount; b++)
+        {
+            float lo = float.MaxValue, hi = float.MinValue, zl = float.MaxValue, zh = float.MinValue;
+            for (uint i = batches[b].first; i < batches[b].first + batches[b].count; i++) { lo = Math.Min(lo, v[i].y); hi = Math.Max(hi, v[i].y); zl = Math.Min(zl, v[i].z); zh = Math.Max(zh, v[i].z); }
+            Console.WriteLine($"avatar batch {b}: texture {batches[b].texture} flags {batches[b].flags} vertices {batches[b].count} y {lo:F2}..{hi:F2} z {zl:F2}..{zh:F2}");
+        }
+    }
+    for (int b = 0; b < hdr.batchCount; b++)
+    {
+        if (batches[b].texture != 1) continue;
+        Vector3 face = default, all = default; int nf = 0, na = 0;
+        static bool In(float x, float lo, float hi) => x >= lo - 1e-4f && x <= hi + 1e-4f;
+        for (uint i = batches[b].first; i + 2 < batches[b].first + batches[b].count; i += 3)
+        {
+            bool isFace = true, isHead = true;
+            for (uint k = 0; k < 3; k++)
+            {
+                var q = v[i + k];
+                isFace &= In(q.u, 8f / 64, 16f / 64) && In(q.v, 8f / 64, 16f / 64);
+                isHead &= q.y > 1.45f;
+            }
+            if (!isHead) continue;
+            if (avatarMessages % 60 == 1 && i - batches[b].first < 36 * 3)
+                Console.WriteLine($"  head tri {i}: " + string.Join(" | ", Enumerable.Range(0, 3).Select(k => $"({v[i + (uint)k].x:F2},{v[i + (uint)k].y:F2},{v[i + (uint)k].z:F2}) uv {v[i + (uint)k].u:F4},{v[i + (uint)k].v:F4}")));
+            for (uint k = 0; k < 3; k++)
+            {
+                var q = v[i + k];
+                all += new Vector3(q.x, q.y, q.z); na++;
+                if (isFace) { face += new Vector3(q.x, q.y, q.z); nf++; }
+            }
+        }
+        if (nf > 0 && na > 0)
+            Console.WriteLine($"avatar skin: head centre {all / na:F3}, face {face / nf:F3} ({nf} face vertices); face points {(face / nf - all / na).Z:+0.000;-0.000} in Z, {(face / nf - all / na).X:+0.000;-0.000} in X");
     }
 }
 

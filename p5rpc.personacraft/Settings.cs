@@ -17,8 +17,8 @@ internal sealed class Settings
     /// <summary>Draw Minecraft's HUD and screens over P5R.</summary>
     public bool Overlay { get; set; } = true;
 
-    /// <summary>Hide Joker while the camera is in first person.</summary>
-    public bool HideJokerInFirstPerson { get; set; } = true;
+    /// <summary>Hide Joker while Minecraft has him; in third person (F5) Minecraft's player model is drawn instead.</summary>
+    public bool HideJoker { get; set; } = true;
 
     /// <summary>Key (Windows virtual-key code) that presses P5R's confirm/interact. Default G.</summary>
     public int InteractKey { get; set; } = 0x47;

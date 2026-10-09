@@ -1,13 +1,17 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Reloaded.Hooks.Definitions;
+using Reloaded.Hooks.Definitions.X64;
 
 namespace p5rpc.personacraft.Input;
 
 /// <summary>
 /// Subclasses P5R's window for what cannot be polled: typed characters (WM_CHAR, so the keyboard
 /// layout and dead keys work in Minecraft's chat) and the mouse wheel. While Minecraft has the input,
-/// mouse buttons and the wheel are not passed on to P5R.
+/// P5R gets no mouse at all (buttons, wheel, movement, raw mouse input) and no cursor: the mod
+/// re-centres the OS cursor every frame to read the mouse, which would otherwise keep P5R's own
+/// cursor on screen. user32's SetCursor is hooked as well, for a game that sets its cursor directly.
 /// </summary>
 internal static class WindowHook
 {
@@ -24,8 +28,19 @@ internal static class WindowHook
     private delegate bool EnumProc(nint hwnd, nint param);
 
     private const int GwlpWndProc = -4;
-    private const uint WmChar = 0x0102, WmMouseWheel = 0x020A;
+    private const uint WmChar = 0x0102, WmMouseWheel = 0x020A, WmMouseMove = 0x0200, WmSetCursor = 0x0020, WmInput = 0x00FF;
     private const uint WmMouseFirst = 0x0201, WmMouseLast = 0x020E; // buttons and wheels, not WM_MOUSEMOVE
+
+    [DllImport("user32")] private static extern nint SetCursor(nint cursor);
+    [DllImport("user32")] private static extern uint GetRawInputData(nint rawInput, uint command, out RawInputHeader data, ref uint size, uint headerSize);
+    [DllImport("kernel32", CharSet = CharSet.Unicode)] private static extern nint GetModuleHandleW(string name);
+    [DllImport("kernel32", CharSet = CharSet.Ansi)] private static extern nint GetProcAddress(nint module, string name);
+    [StructLayout(LayoutKind.Sequential)] private struct RawInputHeader { public uint Type, Size; public nint Device, WParam; }
+    private const uint RidHeader = 0x10000005, RimTypeMouse = 0;
+
+    [Function(CallingConventions.Microsoft)]
+    private delegate nint SetCursorFn(nint cursor);
+    private static IHook<SetCursorFn>? _setCursor;
 
     private static WndProc? _proc;
     private static nint _previous;
@@ -40,6 +55,21 @@ internal static class WindowHook
 
     /// <summary>Wheel notches since the last call (positive = away from the user).</summary>
     public static int TakeWheel() => Interlocked.Exchange(ref _wheel, 0);
+
+    /// <summary>Hooks user32!SetCursor so P5R cannot show its cursor while Minecraft has the mouse.</summary>
+    public static void HookCursor(IReloadedHooks hooks)
+    {
+        try
+        {
+            nint address = GetProcAddress(GetModuleHandleW("user32.dll"), "SetCursor");
+            _setCursor = hooks.CreateHook<SetCursorFn>(cursor => _setCursor!.OriginalFunction(Swallow ? 0 : cursor), address).Activate();
+            Log.Info("input: hooked SetCursor");
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"input: could not hook SetCursor ({e.Message}); P5R's cursor may show");
+        }
+    }
 
     /// <summary>Finds P5R's main window and subclasses it. Returns false until the window exists.</summary>
     public static bool TryInstall()
@@ -95,9 +125,22 @@ internal static class WindowHook
                 Interlocked.Add(ref _wheel, (short)((wParam >> 16) & 0xFFFF) / 120);
                 return 0;
             }
-            if (msg is >= WmMouseFirst and <= WmMouseLast)
+            if (msg is >= WmMouseFirst and <= WmMouseLast || msg == WmMouseMove)
+                return 0;
+            if (msg == WmSetCursor)
+            {
+                SetCursor(0);
+                return 1;
+            }
+            if (msg == WmInput && IsRawMouse(lParam))
                 return 0;
         }
         return CallWindowProc(_previous, hwnd, msg, wParam, lParam);
+    }
+
+    private static bool IsRawMouse(nint handle)
+    {
+        uint size = (uint)Marshal.SizeOf<RawInputHeader>();
+        return GetRawInputData(handle, RidHeader, out var header, ref size, size) != unchecked((uint)-1) && header.Type == RimTypeMouse;
     }
 }

@@ -10,7 +10,8 @@ using Vortice.Mathematics;
 namespace p5rpc.personacraft.Render;
 
 /// <summary>
-/// Minecraft's placed blocks, drawn over P5R's picture with the same camera P5R is given.
+/// Minecraft's placed blocks, and in third person the player's own model, drawn over P5R's picture
+/// with the same camera P5R is given.
 ///
 /// Minecraft sends each 16-block section as a triangle list (built by its own block renderer: models,
 /// tint, ambient occlusion) relative to the section's corner, plus its block atlas. Sections become
@@ -22,7 +23,7 @@ namespace p5rpc.personacraft.Render;
 internal sealed unsafe class Blocks : IDisposable
 {
     private const string Shader = @"
-cbuffer Frame : register(b0) { row_major float4x4 viewProj; float4 offset; };
+cbuffer Frame : register(b0) { row_major float4x4 viewProj; float4 offset; float4 scale; };
 Texture2D atlas : register(t0);
 SamplerState smp : register(s0);
 struct VIn { float3 pos : POSITION; float2 uv : TEXCOORD0; float4 col : COLOR0; };
@@ -30,7 +31,7 @@ struct V { float4 pos : SV_Position; float2 uv : TEXCOORD0; float4 col : COLOR0;
 V vs(VIn i)
 {
     V o;
-    o.pos = mul(float4(i.pos + offset.xyz, 1), viewProj);
+    o.pos = mul(float4(i.pos * scale.xyz + offset.xyz, 1), viewProj);
     o.uv = i.uv;
     o.col = i.col;
     return o;
@@ -71,6 +72,11 @@ float4 ps(V i) : SV_Target
     private readonly ID3D11RasterizerState _raster;
     private readonly ID3D11DepthStencilState _depthWrite, _depthRead;
     private readonly ID3D11BlendState _opaque, _blend;
+    private readonly Dictionary<uint, (ID3D11Texture2D Texture, ID3D11ShaderResourceView View)> _textures = new();
+    private Proto.RenBatch[] _avatarBatches = [];
+    private uint _avatarBatchCount;
+    private ID3D11Buffer? _avatarBuffer;
+    private uint _avatarCapacity, _avatarVertices;
     private ID3D11Texture2D? _depthTexture;
     private ID3D11DepthStencilView? _dsv;
     private int _depthW, _depthH;
@@ -88,7 +94,7 @@ float4 ps(V i) : SV_Target
             new InputElementDescription("TEXCOORD", 0, Format.R32G32_Float, 12, 0),
             new InputElementDescription("COLOR", 0, Format.R8G8B8A8_UNorm, 20, 0),
         ], vsCode.Span);
-        _constants = device.CreateBuffer(new BufferDescription(80, BindFlags.ConstantBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write));
+        _constants = device.CreateBuffer(new BufferDescription(96, BindFlags.ConstantBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write));
         _sampler = device.CreateSamplerState(new SamplerDescription(Filter.MinMagMipPoint, TextureAddressMode.Clamp));
         _raster = device.CreateRasterizerState(RasterizerDescription.CullNone);
         _depthWrite = device.CreateDepthStencilState(DepthStencilDescription.Default);
@@ -121,6 +127,12 @@ float4 ps(V i) : SV_Target
             case Proto.RenClearAll:
                 Clear();
                 break;
+            case Proto.RenTexture:
+                SetTexture(payload, bytes);
+                break;
+            case Proto.RenAvatar:
+                SetAvatar(context, payload, bytes);
+                break;
         }
     }
 
@@ -129,6 +141,7 @@ float4 ps(V i) : SV_Target
         foreach (var section in _sections.Values)
             section.Dispose();
         _sections.Clear();
+        _avatarBatchCount = 0;
     }
 
     private void SetAtlas(byte* payload, uint bytes)
@@ -146,6 +159,56 @@ float4 ps(V i) : SV_Target
         _atlasW = header.width;
         _atlasH = header.height;
         Log.Info($"blocks: atlas {header.width}x{header.height}");
+    }
+
+    /// <summary>An entity texture (player skin, armour) by id, for the avatar's batches.</summary>
+    private void SetTexture(byte* payload, uint bytes)
+    {
+        if (bytes < (uint)sizeof(Proto.RenTextureHdr))
+            return;
+        var header = *(Proto.RenTextureHdr*)payload;
+        if (header.id == 0 || header.width == 0 || header.height == 0
+            || (ulong)sizeof(Proto.RenTextureHdr) + (ulong)header.width * header.height * 4 > bytes)
+            return;
+        if (_textures.Remove(header.id, out var old))
+        {
+            old.View.Dispose();
+            old.Texture.Dispose();
+        }
+        var texture = _device.CreateTexture2D(new Texture2DDescription(Format.R8G8B8A8_UNorm, header.width, header.height, 1, 1, BindFlags.ShaderResource),
+            [new SubresourceData(payload + sizeof(Proto.RenTextureHdr), header.width * 4)]);
+        _textures[header.id] = (texture, _device.CreateShaderResourceView(texture));
+    }
+
+    /// <summary>The player's posed model this frame, relative to its feet; 0 batches = not shown.</summary>
+    private void SetAvatar(ID3D11DeviceContext context, byte* payload, uint bytes)
+    {
+        _avatarBatchCount = 0;
+        if (bytes < (uint)sizeof(Proto.RenAvatarHdr))
+            return;
+        var header = *(Proto.RenAvatarHdr*)payload;
+        ulong need = (ulong)sizeof(Proto.RenAvatarHdr) + (ulong)header.batchCount * (ulong)sizeof(Proto.RenBatch)
+                     + (ulong)header.vertexCount * (ulong)sizeof(Proto.RenVertex);
+        if (header.batchCount == 0 || header.vertexCount == 0 || need > bytes)
+            return;
+        var batches = (Proto.RenBatch*)(payload + sizeof(Proto.RenAvatarHdr));
+        if (_avatarBatches.Length < header.batchCount)
+            _avatarBatches = new Proto.RenBatch[header.batchCount];
+        for (int b = 0; b < header.batchCount; b++)
+            _avatarBatches[b] = batches[b];
+        if (_avatarBuffer == null || _avatarCapacity < header.vertexCount)
+        {
+            _avatarBuffer?.Dispose();
+            _avatarCapacity = Math.Max(header.vertexCount, 4096u);
+            _avatarBuffer = _device.CreateBuffer(new BufferDescription(_avatarCapacity * (uint)sizeof(Proto.RenVertex),
+                BindFlags.VertexBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write));
+        }
+        var mapped = context.Map(_avatarBuffer, 0, MapMode.WriteDiscard);
+        uint size = header.vertexCount * (uint)sizeof(Proto.RenVertex);
+        Buffer.MemoryCopy(batches + header.batchCount, (void*)mapped.DataPointer, size, size);
+        context.Unmap(_avatarBuffer, 0);
+        _avatarVertices = header.vertexCount;
+        _avatarBatchCount = header.batchCount;
     }
 
     private void SetAtlasRegion(ID3D11DeviceContext context, byte* payload, uint bytes)
@@ -190,7 +253,8 @@ float4 ps(V i) : SV_Target
     /// <summary>Draws every section into the bound render target, with the camera Minecraft drives.</summary>
     public void Draw(ID3D11DeviceContext context, ID3D11RenderTargetView rtv, int width, int height, CameraView view)
     {
-        if (_atlasView == null || _sections.Count == 0 || width <= 0 || height <= 0)
+        bool avatar = view.CameraMode != 0 && _avatarBatchCount > 0 && _avatarBuffer != null;
+        if (_atlasView == null || (_sections.Count == 0 && !avatar) || width <= 0 || height <= 0)
             return;
         EnsureDepth(width, height);
         context.ClearDepthStencilView(_dsv!, DepthStencilClearFlags.Depth, 1f, 0);
@@ -217,14 +281,49 @@ float4 ps(V i) : SV_Target
             if (section.Solid != null)
                 DrawSection(context, key, section.Solid, section.SolidCount, view, viewProj);
         }
+        if (avatar)
+            DrawAvatar(context, view, viewProj, translucent: false);
         context.OMSetBlendState(_blend);
         context.OMSetDepthStencilState(_depthRead);
+        context.PSSetShaderResource(0, _atlasView);
         foreach (var (key, section) in _sections)
         {
             if (section.Translucent != null)
                 DrawSection(context, key, section.Translucent, section.TranslucentCount, view, viewProj);
         }
+        if (avatar)
+            DrawAvatar(context, view, viewProj, translucent: true);
         context.OMSetRenderTargets(rtv);
+    }
+
+    /// <summary>Minecraft's player model at its feet, one draw per batch with that batch's texture.</summary>
+    private void DrawAvatar(ID3D11DeviceContext context, CameraView view, Matrix4x4 viewProj, bool translucent)
+    {
+        SetConstants(context, viewProj, new Vector4((float)(view.FeetX - view.X), (float)(view.FeetY - view.Y), (float)(view.FeetZ - view.Z), 0));
+        context.IASetVertexBuffer(0, _avatarBuffer!, (uint)sizeof(Proto.RenVertex));
+        for (int b = 0; b < _avatarBatchCount; b++)
+        {
+            var batch = _avatarBatches[b];
+            if (((batch.flags & 1) != 0) != translucent)
+                continue;
+            ID3D11ShaderResourceView? texture = batch.texture == 0 ? _atlasView
+                : _textures.TryGetValue(batch.texture, out var t) ? t.View : null;
+            if (texture == null || batch.first >= _avatarVertices)
+                continue;
+            uint count = Math.Min(batch.count, _avatarVertices - batch.first) / 3 * 3;
+            context.PSSetShaderResource(0, texture);
+            context.Draw(count, batch.first);
+        }
+        context.PSSetShaderResource(0, _atlasView);
+    }
+
+    private void SetConstants(ID3D11DeviceContext context, Matrix4x4 viewProj, Vector4 offset, Vector4? scale = null)
+    {
+        var mapped = context.Map(_constants, 0, MapMode.WriteDiscard);
+        *(Matrix4x4*)mapped.DataPointer = viewProj;
+        *(Vector4*)((byte*)mapped.DataPointer + 64) = offset;
+        *(Vector4*)((byte*)mapped.DataPointer + 80) = scale ?? Vector4.One;
+        context.Unmap(_constants, 0);
     }
 
     private void DrawSection(ID3D11DeviceContext context, (int X, int Y, int Z) key, ID3D11Buffer buffer, uint count, CameraView view, Matrix4x4 viewProj)
@@ -232,10 +331,7 @@ float4 ps(V i) : SV_Target
         var offset = new Vector4((float)(key.X * 16.0 - view.X), (float)(key.Y * 16.0 - view.Y), (float)(key.Z * 16.0 - view.Z), 0);
         if (offset.LengthSquared() > 256f * 256f)
             return; // far away: skip
-        var mapped = context.Map(_constants, 0, MapMode.WriteDiscard);
-        *(Matrix4x4*)mapped.DataPointer = viewProj;
-        *(Vector4*)((byte*)mapped.DataPointer + 64) = offset;
-        context.Unmap(_constants, 0);
+        SetConstants(context, viewProj, offset);
         context.IASetVertexBuffer(0, buffer, (uint)sizeof(Proto.RenVertex));
         context.Draw(count, 0);
     }
@@ -255,6 +351,13 @@ float4 ps(V i) : SV_Target
     public void Dispose()
     {
         Clear();
+        foreach (var (texture, textureView) in _textures.Values)
+        {
+            textureView.Dispose();
+            texture.Dispose();
+        }
+        _textures.Clear();
+        _avatarBuffer?.Dispose();
         _dsv?.Dispose(); _depthTexture?.Dispose();
         _atlasView?.Dispose(); _atlas?.Dispose();
         _vs.Dispose(); _ps.Dispose(); _layout.Dispose(); _constants.Dispose(); _sampler.Dispose();
